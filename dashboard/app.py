@@ -5,6 +5,9 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
+import plotly.express as px
+import plotly.graph_objects as go
+import seaborn as sns
 
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
@@ -15,7 +18,6 @@ from sklearn.metrics import (
     classification_report,
 )
 
-import shap
 from scipy.stats import ks_2samp
 
 # ----------------------------
@@ -27,7 +29,7 @@ PIPE_PATH = os.path.join(ART_DIR, "inference_pipeline.joblib")
 COLS_PATH = os.path.join(ART_DIR, "expected_columns.json")
 REF_PATH = os.path.join(ART_DIR, "reference_sample.csv")
 
-LABEL_MAP = {0: "In Stock", 1: "Out of Stock"}
+LABEL_MAP = {0: "Low Risk", 1: "High Risk"}
 
 
 @st.cache_resource(show_spinner=False)
@@ -53,10 +55,10 @@ def load_artifacts():
 
 inference_pipeline, EXPECTED_COLS, REF, LOAD_ERR = load_artifacts()
 
-st.set_page_config(page_title="Healithium Availability Dashboard", layout="wide")
-st.title("📊 Healithium Availability — Predictions & Insights")
+st.set_page_config(page_title="Disease Outbreak Risk Dashboard", layout="wide")
+st.title("🦠 Disease Outbreak Risk Monitoring Dashboard")
 st.caption(
-    "Streamlit dashboard for predictions, SHAP explanations, fairness, and drift checks."
+    "Real-time dashboard for disease outbreak risk prediction, monitoring, and analysis."
 )
 
 # ----------------------------
@@ -67,7 +69,7 @@ with st.sidebar:
     uploaded = st.file_uploader("Upload CSV", type=["csv"])
 
     # Auto-detect candidate sensitive & target columns from the uploaded CSV (if any)
-    detected_sensitive = "city"
+    detected_sensitive = "Country"
     detected_target = ""
     if uploaded is not None:
         try:
@@ -83,7 +85,7 @@ with st.sidebar:
                 and _tmp_df[c].nunique() <= 30
             ]
             # Prefer common choices if present
-            for pref in ["city", "platform", "reviewer_location"]:
+            for pref in ["Country", "Disease_Name", "Region"]:
                 if pref in cand_sens:
                     detected_sensitive = pref
                     break
@@ -91,7 +93,7 @@ with st.sidebar:
                     detected_sensitive = cand_sens[0]
 
             # Candidate ground truth columns
-            for pref_t in ["availability", "is_out_of_stock", "target", "label"]:
+            for pref_t in ["high_risk_outbreak", "outbreak_risk", "target", "label"]:
                 if pref_t in _tmp_df.columns:
                     detected_target = pref_t
                     break
@@ -99,12 +101,12 @@ with st.sidebar:
             pass
 
     sensitive_attr = st.text_input(
-        "Sensitive attribute (grouping column)", value=detected_sensitive
+        "Grouping column for analysis", value=detected_sensitive
     )
     target_attr = st.text_input("Ground-truth column (optional)", value=detected_target)
 
     threshold = st.slider(
-        "Probability threshold for 'Out of Stock'", 0.0, 1.0, 0.5, 0.01
+        "Probability threshold for 'High Risk'", 0.0, 1.0, 0.5, 0.01
     )
     st.divider()
     st.write(
@@ -180,15 +182,15 @@ def to_dense(X):
 # ----------------------------
 # Tabs
 # ----------------------------
-tab_pred, tab_shap, tab_fair, tab_drift = st.tabs(
-    ["🔮 Predict", "🔎 SHAP", "⚖️ Fairness", "🌊 Drift"]
+tab_pred, tab_explore, tab_analysis, tab_fair, tab_drift = st.tabs(
+    ["🔮 Risk Prediction", "� Data Exploration", "📈 Risk Analysis", "⚖️ Fairness", "🌊 Drift"]
 )
 
 # ----------------------------
 # Predict tab
 # ----------------------------
 with tab_pred:
-    st.subheader("Batch predictions from CSV (or try a single record)")
+    st.subheader("Disease Outbreak Risk Prediction")
     if inference_pipeline is None or EXPECTED_COLS is None:
         st.warning("Artifacts not loaded. Check /app/artifacts files.")
     else:
@@ -205,17 +207,23 @@ with tab_pred:
                 st.error(f"Could not read CSV: {e}")
                 df_in = None
         else:
-            st.info("Upload a CSV or use a minimal single record below.")
+            st.info("Upload a CSV or use a sample record below.")
             demo = {
-                "product_id": "AC-001",
-                "price_inr": 40990,
-                "city": "Mumbai",
-                "platform": "Croma",
-                "energy_rating_stars": 5,
-                "warranty_years": 2,
-                "capacity_unified": 1.5,
-                "price_density_score": 0.62,
-                "warranty_quality_interaction": 1.24,
+                "Population": 50000000,
+                "Cases_Reported": 1000,
+                "Deaths_Reported": 50,
+                "Recovered": 900,
+                "Vaccination_Coverage_Pct": 75.0,
+                "Healthcare_Expenditure_PctGDP": 8.5,
+                "Urbanization_Rate_Pct": 80.0,
+                "Avg_Temperature_C": 25.0,
+                "Avg_Humidity_Pct": 65.0,
+                "case_fatality_rate": 0.05,
+                "cases_per_100k": 2.0,
+                "recovery_rate": 0.9,
+                "healthcare_vaccination_score": 637.5,
+                "Country": "Thailand",
+                "Disease_Name": "Malaria"
             }
             df_in = pd.DataFrame([demo])
 
@@ -226,7 +234,7 @@ with tab_pred:
                 {
                     "prediction": preds.astype(int),
                     "label": [LABEL_MAP.get(int(p), str(p)) for p in preds],
-                    "proba_out_of_stock": proba if proba is not None else np.nan,
+                    "proba_high_risk": proba if proba is not None else np.nan,
                 }
             )
             st.success(f"Predicted {len(out)} rows.")
@@ -234,7 +242,7 @@ with tab_pred:
 
             # optional ground truth
             gt_col = None
-            for c in ["availability", "Availability", "is_out_of_stock", "target"]:
+            for c in ["high_risk_outbreak", "outbreak_risk", "target", "label"]:
                 if c in df_in.columns:
                     gt_col = c
                     break
@@ -246,15 +254,15 @@ with tab_pred:
                     .str.strip()
                     .map(
                         {
-                            "in stock": 0,
-                            "instock": 0,
-                            "available": 0,
+                            "low risk": 0,
+                            "low": 0,
+                            "safe": 0,
                             "0": 0,
                             "false": 0,
                             "no": 0,
-                            "out of stock": 1,
-                            "outofstock": 1,
-                            "unavailable": 1,
+                            "high risk": 1,
+                            "high": 1,
+                            "dangerous": 1,
                             "1": 1,
                             "true": 1,
                             "yes": 1,
@@ -263,15 +271,15 @@ with tab_pred:
                 )
                 y_true = y_true_raw.fillna(0).astype(int).values
                 y_pred = (
-                    (out["proba_out_of_stock"].fillna(0.0).values >= threshold).astype(
+                    (out["proba_high_risk"].fillna(0.0).values >= threshold).astype(
                         int
                     )
                     if proba is not None
                     else out["prediction"].values
                 )
-                st.write("**Metrics**")
+                st.write("**Model Performance Metrics**")
                 y_pred = (
-                    (out["proba_out_of_stock"].fillna(0.0).values >= threshold).astype(
+                    (out["proba_high_risk"].fillna(0.0).values >= threshold).astype(
                         int
                     )
                     if proba is not None
@@ -298,136 +306,197 @@ with tab_pred:
                 cm = confusion_matrix(y_true, y_pred)
                 cm_df = pd.DataFrame(
                     cm,
-                    index=["True 0 (In Stock)", "True 1 (Out of Stock)"],
+                    index=["True 0 (Low Risk)", "True 1 (High Risk)"],
                     columns=["Pred 0", "Pred 1"],
                 )
-                st.write("**Confusion matrix**")
+                st.write("**Confusion Matrix**")
                 st.dataframe(cm_df, use_container_width=True)
 
 # ----------------------------
-# SHAP tab (robust bar-only; handles 1D/2D/3D SHAP)
+# Data Exploration tab
 # ----------------------------
-with tab_shap:
-    st.subheader("Global feature importance (SHAP) — Robust view")
+with tab_explore:
+    st.subheader("Disease Outbreak Data Exploration")
 
-    if inference_pipeline is None or EXPECTED_COLS is None:
-        st.warning("Artifacts not loaded.")
+    if uploaded is None:
+        st.info("Upload a CSV file to explore disease outbreak data.")
+        # Show default dataset exploration
+        if REF is not None:
+            st.write("**Reference Dataset Overview**")
+            st.dataframe(REF.head(), use_container_width=True)
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if 'Disease_Name' in REF.columns:
+                    disease_counts = REF['Disease_Name'].value_counts()
+                    fig_disease = px.bar(
+                        x=disease_counts.values,
+                        y=disease_counts.index,
+                        orientation='h',
+                        title="Disease Distribution",
+                        labels={'x': 'Count', 'y': 'Disease'}
+                    )
+                    st.plotly_chart(fig_disease, use_container_width=True)
+            
+            with col2:
+                if 'Country' in REF.columns:
+                    country_counts = REF['Country'].value_counts().head(10)
+                    fig_country = px.bar(
+                        x=country_counts.values,
+                        y=country_counts.index,
+                        orientation='h',
+                        title="Top 10 Countries by Records",
+                        labels={'x': 'Count', 'y': 'Country'}
+                    )
+                    st.plotly_chart(fig_country, use_container_width=True)
     else:
-        # pick base data
-        base = REF.copy() if REF is not None else None
-        if base is None and uploaded is not None:
-            try:
-                tmp = pd.read_csv(io.BytesIO(uploaded.getvalue()))
-                base = tmp.sample(n=min(200, len(tmp)), random_state=42)
-            except Exception as e:
-                st.error(f"Error using uploaded CSV for SHAP: {e}")
-                base = None
+        try:
+            df = pd.read_csv(io.BytesIO(uploaded.getvalue()))
+            st.write("**Dataset Overview**")
+            st.dataframe(df.head(), use_container_width=True)
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total Records", len(df))
+            with col2:
+                st.metric("Features", len(df.columns))
+            with col3:
+                if 'Disease_Name' in df.columns:
+                    st.metric("Unique Diseases", df['Disease_Name'].nunique())
+            
+            # Visualizations
+            if 'Cases_Reported' in df.columns and 'Deaths_Reported' in df.columns:
+                st.write("**Case Fatality Analysis**")
+                df['case_fatality_rate'] = df['Deaths_Reported'] / df['Cases_Reported'].replace(0, 1)
+                
+                fig_cfr = px.histogram(
+                    df, 
+                    x='case_fatality_rate',
+                    title="Distribution of Case Fatality Rates",
+                    nbins=50
+                )
+                st.plotly_chart(fig_cfr, use_container_width=True)
+            
+            if 'Country' in df.columns and 'Cases_Reported' in df.columns:
+                st.write("**Geographic Analysis**")
+                country_cases = df.groupby('Country')['Cases_Reported'].sum().sort_values(ascending=False).head(15)
+                
+                fig_geo = px.bar(
+                    x=country_cases.values,
+                    y=country_cases.index,
+                    orientation='h',
+                    title="Total Cases by Country (Top 15)",
+                    labels={'x': 'Total Cases', 'y': 'Country'}
+                )
+                st.plotly_chart(fig_geo, use_container_width=True)
+            
+        except Exception as e:
+            st.error(f"Error exploring data: {e}")
 
-        if base is None:
-            st.info(
-                "Need reference_sample.csv (in artifacts) or an uploaded CSV to compute SHAP."
-            )
-        else:
-            # align & encode
-            al = align_columns(base.copy(), EXPECTED_COLS)
-            pre = inference_pipeline.named_steps["preprocess"]
-            X_enc = pre.transform(al)
-            X_dense = (
-                X_enc.toarray() if hasattr(X_enc, "toarray") else np.asarray(X_enc)
-            )
-
-            mdl = inference_pipeline.named_steps["model"]
-
-            # feature names (best effort)
-            def _names_from_pre(preprocessor):
-                names = []
-                for name, trans, cols in preprocessor.transformers_:
-                    if name == "num":
-                        names.extend(cols)
-                    elif name == "cat":
+# ----------------------------
+# Risk Analysis tab
+# ----------------------------
+with tab_analysis:
+    st.subheader("Disease Outbreak Risk Analysis")
+    
+    if uploaded is None:
+        st.info("Upload a CSV file to analyze disease outbreak risk patterns.")
+    else:
+        try:
+            df = pd.read_csv(io.BytesIO(uploaded.getvalue()))
+            
+            # Create risk features if not present
+            if 'case_fatality_rate' not in df.columns and 'Cases_Reported' in df.columns and 'Deaths_Reported' in df.columns:
+                df['case_fatality_rate'] = df['Deaths_Reported'] / df['Cases_Reported'].replace(0, 1)
+            
+            if 'cases_per_100k' not in df.columns and 'Cases_Reported' in df.columns and 'Population' in df.columns:
+                df['cases_per_100k'] = (df['Cases_Reported'] / df['Population']) * 100000
+            
+            # Make predictions
+            if inference_pipeline is not None and EXPECTED_COLS is not None:
+                al = align_columns(df.copy(), EXPECTED_COLS)
+                preds, proba = predict_df(al)
+                df['predicted_risk'] = preds
+                if proba is not None:
+                    df['risk_probability'] = proba
+            
+            # Risk analysis visualizations
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if 'case_fatality_rate' in df.columns:
+                    fig_cfr = px.scatter(
+                        df, 
+                        x='case_fatality_rate', 
+                        y='Cases_Reported',
+                        color='Disease_Name' if 'Disease_Name' in df.columns else None,
+                        title="Case Fatality Rate vs Cases Reported",
+                        log_y=True
+                    )
+                    st.plotly_chart(fig_cfr, use_container_width=True)
+            
+            with col2:
+                if 'risk_probability' in df.columns:
+                    fig_risk = px.histogram(
+                        df,
+                        x='risk_probability',
+                        title="Distribution of Risk Probabilities",
+                        nbins=30
+                    )
+                    st.plotly_chart(fig_risk, use_container_width=True)
+            
+            # Feature importance from model
+            if inference_pipeline is not None:
+                st.write("**Model Feature Importance**")
+                try:
+                    model = inference_pipeline.named_steps["model"]
+                    if hasattr(model, 'feature_importances_'):
+                        preprocessor = inference_pipeline.named_steps["preprocess"]
+                        
+                        # Get feature names
+                        numeric_features = [c for c in EXPECTED_COLS if c not in ['Country', 'Disease_Name']]
+                        categorical_features = ['Country', 'Disease_Name']
+                        
+                        feature_names = numeric_features.copy()
+                        
+                        # Add one-hot encoded features
                         try:
-                            oh = trans.named_steps["oh"]
-                            names.extend(list(oh.get_feature_names_out(cols)))
-                        except Exception:
-                            names.extend(cols)
-                return names
-
-            try:
-                feat_names = _names_from_pre(pre)
-            except Exception:
-                feat_names = [f"f{i}" for i in range(X_dense.shape[1])]
-
-            # compute SHAP
-            try:
-                import shap
-
-                if isinstance(mdl, RandomForestClassifier):
-                    expl = shap.TreeExplainer(mdl)
-                    vals = expl.shap_values(X_dense, check_additivity=False)
-                    if isinstance(vals, list):
-                        sv = vals[1] if len(vals) > 1 else np.array(vals[0])
-                    else:
-                        sv = np.array(vals)
-                elif isinstance(mdl, LogisticRegression):
-                    expl = shap.LinearExplainer(mdl, X_dense)
-                    sv = np.array(expl(X_dense).values)
-                else:
-                    bg = shap.sample(X_dense, min(100, X_dense.shape[0]))
-                    expl = shap.KernelExplainer(mdl.predict_proba, bg)
-                    sv = np.array(expl.shap_values(X_dense[:50])[1])
-            except Exception as e:
-                st.error(f"SHAP failed: {e}")
-                st.stop()
-
-            # -------- normalize shapes to (n_samples, n_features) --------
-            sv = np.asarray(sv)
-
-            if sv.ndim == 1:
-                sv = sv.reshape(-1, 1)
-            elif sv.ndim == 3:
-                # common layout: (classes, n_samples, n_features) -> use last class
-                if sv.shape[0] <= 3 and sv.shape[-1] >= 2:
-                    sv = sv[-1]
-                else:
-                    # fallback: collapse leading dims into samples
-                    sv = sv.reshape(-1, sv.shape[-1])
-            elif sv.ndim > 3:
-                sv = sv.reshape(sv.shape[-2], sv.shape[-1])
-
-            # compute importance & flatten
-            mean_abs = np.mean(np.abs(sv), axis=0)
-            mean_abs = np.ravel(mean_abs)  # ensure 1D
-
-            # align feat_names length with shap width
-            if len(feat_names) != len(mean_abs):
-                feat_names = [f"f{i}" for i in range(len(mean_abs))]
-
-            # build importance df safely
-            imp_df = pd.DataFrame(
-                {
-                    "feature": pd.Index(feat_names, dtype="object"),
-                    "mean_abs_shap": pd.Series(mean_abs, dtype="float64"),
-                }
-            ).sort_values("mean_abs_shap", ascending=False)
-
-            st.write("**Top features by mean(|SHAP|)**")
-            st.dataframe(imp_df.head(25), use_container_width=True)
-
-            # bar chart
-            fig, ax = plt.subplots(figsize=(8, 6))
-            top = imp_df.head(20)
-            ax.barh(range(len(top)), top["mean_abs_shap"].to_numpy())
-            ax.set_yticks(range(len(top)))
-            ax.set_yticklabels(top["feature"].tolist())
-            ax.invert_yaxis()
-            ax.set_xlabel("mean(|SHAP value|)")
-            ax.set_title("SHAP Feature Importance (Top 20)")
-            plt.tight_layout()
-            st.pyplot(fig, clear_figure=True)
-
-            st.caption(
-                "Bar-only mode is used to avoid one-hot shape mismatches that can break beeswarm/dependence plots."
-            )
+                            cat_transformer = preprocessor.named_transformers_['cat']
+                            if hasattr(cat_transformer, 'get_feature_names_out'):
+                                cat_features = cat_transformer.get_feature_names_out(categorical_features)
+                                feature_names.extend(cat_features)
+                        except:
+                            feature_names.extend(categorical_features)
+                        
+                        importances = model.feature_importances_
+                        
+                        # Ensure matching lengths
+                        min_len = min(len(feature_names), len(importances))
+                        feature_names = feature_names[:min_len]
+                        importances = importances[:min_len]
+                        
+                        importance_df = pd.DataFrame({
+                            'feature': feature_names,
+                            'importance': importances
+                        }).sort_values('importance', ascending=False)
+                        
+                        fig_imp = px.bar(
+                            importance_df.head(15),
+                            x='importance',
+                            y='feature',
+                            orientation='h',
+                            title="Top 15 Feature Importances"
+                        )
+                        st.plotly_chart(fig_imp, use_container_width=True)
+                        
+                        st.dataframe(importance_df.head(20), use_container_width=True)
+                        
+                except Exception as e:
+                    st.error(f"Could not compute feature importance: {e}")
+            
+        except Exception as e:
+            st.error(f"Error in risk analysis: {e}")
 
 # ----------------------------
 # Fairness tab (selection rate + optional metrics)
@@ -478,15 +547,15 @@ with tab_fair:
         lambda g: pd.Series(
             {
                 "n": int(len(g)),
-                "selection_rate": float(
+                "high_risk_rate": float(
                     (pred_hat[g.index] == 1).mean()
-                ),  # predicted 'Out of Stock' rate
+                ),  # predicted 'High Risk' rate
             }
         )
     )
-    st.write("**Selection rate by group**")
+    st.write("**High Risk rate by group**")
     st.dataframe(
-        summary.sort_values("selection_rate", ascending=False), use_container_width=True
+        summary.sort_values("high_risk_rate", ascending=False), use_container_width=True
     )
 
     # Optional metrics (only if ground-truth is provided)
@@ -539,20 +608,20 @@ with tab_fair:
 
         # Simple parity gaps (selection rate difference vs. overall)
         overall_sr = float((pred_hat == 1).mean())
-        summary["selection_rate_gap_vs_overall"] = (
-            summary["selection_rate"] - overall_sr
+        summary["high_risk_rate_gap_vs_overall"] = (
+            summary["high_risk_rate"] - overall_sr
         )
         st.write(
-            "**Selection-rate gap vs overall** (positive = predicts 'Out of Stock' more often than average)"
+            "**High-risk rate gap vs overall** (positive = predicts 'High Risk' more often than average)"
         )
         st.dataframe(
-            summary[["n", "selection_rate", "selection_rate_gap_vs_overall"]],
+            summary[["n", "high_risk_rate", "high_risk_rate_gap_vs_overall"]],
             use_container_width=True,
         )
     else:
         st.info(
-            "No ground-truth column selected; showing **selection rates** only. "
-            "If you want accuracy/F1 per group, set a ground-truth column (e.g., `availability`, `is_out_of_stock`, `target`, or `label`)."
+            "No ground-truth column selected; showing **high-risk rates** only. "
+            "If you want accuracy/F1 per group, set a ground-truth column (e.g., `high_risk_outbreak`, `outbreak_risk`, `target`, or `label`)."
         )
 
 # ----------------------------

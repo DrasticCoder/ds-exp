@@ -9,7 +9,7 @@ on:
 
 permissions:
   contents: read
-  packages: write # needed if pushing to GHCR
+  packages: write
 
 concurrency:
   group: ci-${{ github.ref }}

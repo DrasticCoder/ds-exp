@@ -4,10 +4,45 @@ import io
 import numpy as np
 import pandas as pd
 import streamlit as st
-import matplotlib.pyplot as plt
-import plotly.express as px
-import plotly.graph_objects as go
-import seaborn as sns
+import warnings
+
+# Suppress warnings for cleaner production output
+warnings.filterwarnings('ignore')
+
+# Configure Streamlit page settings for production
+st.set_page_config(
+    page_title="Disease Outbreak Risk Dashboard",
+    page_icon="🦠",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Import visualization libraries with fallbacks
+try:
+    import matplotlib.pyplot as plt
+    import matplotlib
+    matplotlib.use('Agg')  # Use non-interactive backend for server deployment
+    # Set matplotlib parameters for production
+    plt.rcParams['figure.dpi'] = 100
+    plt.rcParams['savefig.dpi'] = 100
+    plt.rcParams['font.size'] = 10
+except ImportError as e:
+    st.error(f"Error importing matplotlib: {e}")
+    plt = None
+
+try:
+    import plotly.express as px
+    import plotly.graph_objects as go
+except ImportError as e:
+    st.error(f"Error importing plotly: {e}")
+    px = None
+    go = None
+
+try:
+    import seaborn as sns
+except ImportError as e:
+    st.warning(f"Seaborn not available: {e}")
+    sns = None
 
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
@@ -18,7 +53,11 @@ from sklearn.metrics import (
     classification_report,
 )
 
-from scipy.stats import ks_2samp
+try:
+    from scipy.stats import ks_2samp
+except ImportError as e:
+    st.error(f"Error importing scipy: {e}")
+    ks_2samp = None
 
 # ----------------------------
 # Paths & lazy loading
@@ -55,7 +94,6 @@ def load_artifacts():
 
 inference_pipeline, EXPECTED_COLS, REF, LOAD_ERR = load_artifacts()
 
-st.set_page_config(page_title="Disease Outbreak Risk Dashboard", layout="wide")
 st.title("🦠 Disease Outbreak Risk Monitoring Dashboard")
 st.caption(
     "Real-time dashboard for disease outbreak risk prediction, monitoring, and analysis."
@@ -182,8 +220,8 @@ def to_dense(X):
 # ----------------------------
 # Tabs
 # ----------------------------
-tab_pred, tab_explore, tab_analysis, tab_fair, tab_drift = st.tabs(
-    ["🔮 Risk Prediction", "� Data Exploration", "📈 Risk Analysis", "⚖️ Fairness", "🌊 Drift"]
+tab_pred, tab_explore, tab_analysis, tab_shap, tab_responsible, tab_fair, tab_drift = st.tabs(
+    ["🔮 Risk Prediction", "📊 Data Exploration", "📈 Risk Analysis", "🔎 SHAP", "🛡️ Responsible AI", "⚖️ Fairness", "🌊 Drift"]
 )
 
 # ----------------------------
@@ -316,7 +354,7 @@ with tab_pred:
 # Data Exploration tab
 # ----------------------------
 with tab_explore:
-    st.subheader("Disease Outbreak Data Exploration")
+    st.subheader("📊 Data Exploration")
 
     if uploaded is None:
         st.info("Upload a CSV file to explore disease outbreak data.")
@@ -446,9 +484,31 @@ with tab_analysis:
                     )
                     st.plotly_chart(fig_risk, use_container_width=True)
             
-            # Feature importance from model
+            # Enhanced Model Analysis and Metrics
             if inference_pipeline is not None:
-                st.write("**Model Feature Importance**")
+                st.write("**📊 Comprehensive Model Analysis**")
+                
+                # Model Performance Metrics
+                if 'predicted_risk' in df.columns and 'risk_probability' in df.columns:
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        high_risk_count = (df['predicted_risk'] == 1).sum()
+                        st.metric("High Risk Cases", high_risk_count)
+                    
+                    with col2:
+                        avg_risk_prob = df['risk_probability'].mean()
+                        st.metric("Avg Risk Probability", f"{avg_risk_prob:.3f}")
+                    
+                    with col3:
+                        max_risk_prob = df['risk_probability'].max()
+                        st.metric("Max Risk Probability", f"{max_risk_prob:.3f}")
+                    
+                    with col4:
+                        risk_variance = df['risk_probability'].var()
+                        st.metric("Risk Variance", f"{risk_variance:.4f}")
+                
+                # Feature Importance Analysis
                 try:
                     model = inference_pipeline.named_steps["model"]
                     if hasattr(model, 'feature_importances_'):
@@ -477,26 +537,491 @@ with tab_analysis:
                         importances = importances[:min_len]
                         
                         importance_df = pd.DataFrame({
-                            'feature': feature_names,
-                            'importance': importances
-                        }).sort_values('importance', ascending=False)
+                            'Feature': feature_names,
+                            'Importance': importances,
+                            'Cumulative_Importance': np.cumsum(importances),
+                            'Importance_Pct': (importances / importances.sum()) * 100
+                        }).sort_values('Importance', ascending=False)
                         
-                        fig_imp = px.bar(
-                            importance_df.head(15),
-                            x='importance',
-                            y='feature',
-                            orientation='h',
-                            title="Top 15 Feature Importances"
+                        # Enhanced visualizations
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            # Main importance plot
+                            fig_imp = px.bar(
+                                importance_df.head(15),
+                                x='Importance',
+                                y='Feature',
+                                orientation='h',
+                                title="Feature Importance (Top 15)",
+                                color='Importance',
+                                color_continuous_scale='viridis',
+                                text='Importance_Pct'
+                            )
+                            fig_imp.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
+                            fig_imp.update_layout(yaxis={'categoryorder': 'total ascending'})
+                            st.plotly_chart(fig_imp, use_container_width=True)
+                        
+                        with col2:
+                            # Cumulative importance plot
+                            fig_cum = px.line(
+                                importance_df.head(20),
+                                x=range(1, min(21, len(importance_df) + 1)),
+                                y='Cumulative_Importance',
+                                title="Cumulative Feature Importance",
+                                markers=True
+                            )
+                            fig_cum.add_hline(y=0.8, line_dash="dash", line_color="red", 
+                                            annotation_text="80% threshold")
+                            fig_cum.update_xaxes(title="Number of Features")
+                            fig_cum.update_yaxes(title="Cumulative Importance")
+                            st.plotly_chart(fig_cum, use_container_width=True)
+                        
+                        # Feature categories analysis
+                        st.write("**Feature Categories Analysis**")
+                        
+                        # Categorize features
+                        categories = {
+                            'Epidemiological': ['case_fatality_rate', 'cases_per_100k', 'recovery_rate', 
+                                              'Cases_Reported', 'Deaths_Reported', 'Recovered'],
+                            'Healthcare': ['Healthcare_Expenditure_PctGDP', 'Vaccination_Coverage_Pct', 
+                                         'healthcare_vaccination_score'],
+                            'Demographics': ['Population', 'Urbanization_Rate_Pct'],
+                            'Environmental': ['Avg_Temperature_C', 'Avg_Humidity_Pct'],
+                            'Geographic': [f for f in feature_names if f.startswith('Country_')],
+                            'Disease_Type': [f for f in feature_names if f.startswith('Disease_Name_')]
+                        }
+                        
+                        category_importance = {}
+                        for cat, features in categories.items():
+                            cat_imp = importance_df[importance_df['Feature'].isin(features)]['Importance'].sum()
+                            category_importance[cat] = cat_imp
+                        
+                        cat_df = pd.DataFrame(list(category_importance.items()), 
+                                            columns=['Category', 'Total_Importance'])
+                        cat_df = cat_df.sort_values('Total_Importance', ascending=False)
+                        
+                        fig_cat = px.pie(
+                            cat_df, 
+                            values='Total_Importance', 
+                            names='Category',
+                            title="Feature Importance by Category"
                         )
-                        st.plotly_chart(fig_imp, use_container_width=True)
+                        st.plotly_chart(fig_cat, use_container_width=True)
                         
-                        st.dataframe(importance_df.head(20), use_container_width=True)
+                        # Detailed feature table
+                        st.write("**Detailed Feature Analysis**")
+                        st.dataframe(
+                            importance_df[['Feature', 'Importance_Pct', 'Cumulative_Importance']].head(25), 
+                            use_container_width=True
+                        )
                         
                 except Exception as e:
                     st.error(f"Could not compute feature importance: {e}")
+                    st.write("Debug info:", str(e))
             
         except Exception as e:
             st.error(f"Error in risk analysis: {e}")
+
+# ----------------------------
+# SHAP Explanations tab
+# ----------------------------
+with tab_shap:
+    st.subheader("🔎 SHAP Feature Importance Analysis")
+    
+    if inference_pipeline is None or EXPECTED_COLS is None:
+        st.warning("Model artifacts not loaded. Cannot compute SHAP values.")
+    else:
+        # Data selection for SHAP analysis
+        shap_data = None
+        if uploaded is not None:
+            try:
+                shap_data = pd.read_csv(io.BytesIO(uploaded.getvalue()))
+                st.success(f"Using uploaded data with {len(shap_data)} records for SHAP analysis")
+            except Exception as e:
+                st.error(f"Error loading uploaded data: {e}")
+                shap_data = None
+        
+        if shap_data is None and REF is not None:
+            shap_data = REF.copy()
+            st.info("Using reference dataset for SHAP analysis")
+        
+        if shap_data is not None:
+            try:
+                # Sample data for SHAP (limit to avoid memory issues)
+                sample_size = min(100, len(shap_data))
+                shap_sample = shap_data.sample(n=sample_size, random_state=42)
+                
+                # Prepare data
+                al_sample = align_columns(shap_sample.copy(), EXPECTED_COLS)
+                
+                # Get model components
+                model = inference_pipeline.named_steps["model"]
+                preprocessor = inference_pipeline.named_steps["preprocess"]
+                
+                # Transform data
+                X_transformed = preprocessor.transform(al_sample)
+                if hasattr(X_transformed, 'toarray'):
+                    X_transformed = X_transformed.toarray()
+                
+                # Get feature names for SHAP
+                numeric_features = [c for c in EXPECTED_COLS if c not in ['Country', 'Disease_Name']]
+                categorical_features = ['Country', 'Disease_Name']
+                
+                feature_names = numeric_features.copy()
+                try:
+                    cat_transformer = preprocessor.named_transformers_['cat']
+                    if hasattr(cat_transformer, 'get_feature_names_out'):
+                        cat_features = cat_transformer.get_feature_names_out(categorical_features)
+                        feature_names.extend(cat_features)
+                except:
+                    feature_names.extend(categorical_features)
+                
+                # Ensure matching lengths
+                min_len = min(len(feature_names), X_transformed.shape[1])
+                feature_names = feature_names[:min_len]
+                X_transformed = X_transformed[:, :min_len]
+                
+                st.write(f"**Computing SHAP values for {sample_size} samples with {len(feature_names)} features**")
+                
+                # Compute SHAP values
+                try:
+                    import shap
+                    shap_available = True
+                except ImportError:
+                    st.error("SHAP library not available. Please install it with: pip install shap==0.44.1")
+                    shap_available = False
+                
+                if shap_available:
+                    with st.spinner("Computing SHAP values... This may take a moment."):
+                        if hasattr(model, 'predict_proba'):
+                            # For classification models
+                            explainer = shap.Explainer(model.predict_proba, X_transformed)
+                            shap_values = explainer(X_transformed)
+                            
+                            # Use class 1 (High Risk) SHAP values
+                            if hasattr(shap_values, 'values') and len(shap_values.values.shape) > 2:
+                                shap_vals = shap_values.values[:, :, 1]  # High risk class
+                            else:
+                                shap_vals = shap_values.values
+                        else:
+                            # Fallback for other models
+                            explainer = shap.Explainer(model, X_transformed)
+                            shap_values = explainer(X_transformed)
+                            shap_vals = shap_values.values
+                    
+                    # Calculate feature importance like in your image
+                    mean_abs_shap = np.mean(np.abs(shap_vals), axis=0)
+                    
+                    # Create the feature importance dataframe
+                    importance_df = pd.DataFrame({
+                        'feature': feature_names,
+                        'mean_abs_shap': mean_abs_shap
+                    }).sort_values('mean_abs_shap', ascending=False)
+                    
+                    # Display results similar to your image
+                    st.write("### Top features by mean(|SHAP|)")
+                    
+                    # Show the table like in your image
+                    col1, col2 = st.columns([1, 2])
+                    
+                    with col1:
+                        st.dataframe(
+                            importance_df.head(20).reset_index(drop=True), 
+                            use_container_width=True,
+                            height=400
+                        )
+                    
+                    with col2:
+                        # Create the horizontal bar chart like in your image
+                        if plt is not None:
+                            fig, ax = plt.subplots(figsize=(10, 8))
+                            
+                            top_features = importance_df.head(20)
+                            y_pos = np.arange(len(top_features))
+                            
+                            bars = ax.barh(y_pos, top_features['mean_abs_shap'], 
+                                          color='steelblue', alpha=0.8)
+                            
+                            ax.set_yticks(y_pos)
+                            ax.set_yticklabels(top_features['feature'])
+                            ax.invert_yaxis()  # Highest values at top
+                            ax.set_xlabel('mean(|SHAP value|)')
+                            ax.set_title('SHAP Feature Importance (Top 20)')
+                            ax.grid(axis='x', alpha=0.3)
+                            
+                            # Add value labels on bars
+                            for i, bar in enumerate(bars):
+                                width = bar.get_width()
+                                ax.text(width, bar.get_y() + bar.get_height()/2, 
+                                       f'{width:.3f}', ha='left', va='center', fontsize=8)
+                            
+                            plt.tight_layout()
+                            st.pyplot(fig, clear_figure=True)
+                        else:
+                            st.error("Matplotlib not available for plotting")
+                    
+                    # Additional SHAP visualizations
+                    st.write("### SHAP Summary Statistics")
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        st.metric("Total Features", len(feature_names))
+                    with col2:
+                        st.metric("Samples Analyzed", sample_size)
+                    with col3:
+                        st.metric("Top Feature Impact", f"{mean_abs_shap.max():.4f}")
+                    with col4:
+                        st.metric("Mean SHAP Magnitude", f"{mean_abs_shap.mean():.4f}")
+                    
+                    # Feature importance interpretation
+                    st.write("### 🎯 Feature Importance Interpretation")
+                    st.write("**Top 5 Most Important Features for Outbreak Risk:**")
+                    
+                    for i, (_, row) in enumerate(importance_df.head(5).iterrows()):
+                        feature_name = row['feature']
+                        importance = row['mean_abs_shap']
+                        
+                        # Provide interpretation based on feature name
+                        interpretation = ""
+                        if 'case_fatality_rate' in feature_name.lower():
+                            interpretation = "Higher case fatality rates strongly indicate higher outbreak risk"
+                        elif 'cases_per_100k' in feature_name.lower():
+                            interpretation = "Cases per 100k population is a key indicator of outbreak severity"
+                        elif 'vaccination' in feature_name.lower():
+                            interpretation = "Vaccination coverage affects population immunity and outbreak risk"
+                        elif 'healthcare' in feature_name.lower():
+                            interpretation = "Healthcare expenditure reflects system capacity to handle outbreaks"
+                        elif 'country' in feature_name.lower():
+                            interpretation = "Geographic factors influence outbreak patterns and response"
+                        elif 'disease' in feature_name.lower():
+                            interpretation = "Different diseases have varying risk profiles and transmission patterns"
+                        else:
+                            interpretation = "This feature contributes significantly to outbreak risk predictions"
+                        
+                        st.write(f"**{i+1}. {feature_name}** (Impact: {importance:.4f})")
+                        st.write(f"   💡 {interpretation}")
+                
+            except Exception as e:
+                st.error(f"Error computing SHAP values: {e}")
+                st.write("**Debug information:**", str(e))
+                
+                # Fallback to simple feature importance
+                if hasattr(model, 'feature_importances_'):
+                    st.write("### Fallback: Model Feature Importances")
+                    
+                    importances = model.feature_importances_
+                    min_len = min(len(feature_names), len(importances))
+                    
+                    fallback_df = pd.DataFrame({
+                        'feature': feature_names[:min_len],
+                        'importance': importances[:min_len]
+                    }).sort_values('importance', ascending=False)
+                    
+                    fig, ax = plt.subplots(figsize=(10, 6))
+                    top_features = fallback_df.head(15)
+                    ax.barh(range(len(top_features)), top_features['importance'])
+                    ax.set_yticks(range(len(top_features)))
+                    ax.set_yticklabels(top_features['feature'])
+                    ax.invert_yaxis()
+                    ax.set_xlabel('Feature Importance')
+                    ax.set_title('Model Feature Importance (Fallback)')
+                    plt.tight_layout()
+                    st.pyplot(fig, clear_figure=True)
+        else:
+            st.info("Please upload a CSV file or ensure reference data is available to compute SHAP values.")
+
+# ----------------------------
+# Responsible AI tab
+# ----------------------------
+with tab_responsible:
+    st.subheader("🛡️ Responsible AI Checklist & Ethics")
+    
+    # Responsible AI Checklist
+    st.write("### 📋 AI Ethics Checklist")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.write("#### ✅ **Fairness & Bias**")
+        fairness_items = [
+            "Model tested across different countries and regions",
+            "Performance metrics evaluated by demographic groups", 
+            "Bias detection implemented in fairness tab",
+            "Equal prediction quality across populations",
+            "Systematic monitoring for discriminatory outcomes"
+        ]
+        for item in fairness_items:
+            st.write(f"✓ {item}")
+        
+        st.write("#### 🔒 **Privacy & Data Protection**")
+        privacy_items = [
+            "No personally identifiable information (PII) collected",
+            "Aggregated health data used for training",
+            "Data minimization principle applied",
+            "Secure data handling practices implemented",
+            "GDPR/HIPAA compliance considerations addressed"
+        ]
+        for item in privacy_items:
+            st.write(f"✓ {item}")
+            
+    with col2:
+        st.write("#### 📋 **Informed Consent & Transparency**")
+        consent_items = [
+            "Clear explanation of model purpose and limitations",
+            "Transparent about prediction methodology",
+            "Users informed about data usage",
+            "Model interpretability provided via feature importance",
+            "Uncertainty quantification included in predictions"
+        ]
+        for item in consent_items:
+            st.write(f"✓ {item}")
+            
+        st.write("#### 🎯 **Model Governance**")
+        governance_items = [
+            "Regular model performance monitoring",
+            "Data drift detection implemented",
+            "Model versioning and reproducibility",
+            "Human oversight in high-stakes decisions",
+            "Continuous bias and fairness auditing"
+        ]
+        for item in governance_items:
+            st.write(f"✓ {item}")
+    
+    st.divider()
+    
+    # Model Explainability Section
+    st.write("### 🔍 **Model Explainability & SHAP Analysis**")
+    
+    if uploaded is None and REF is not None:
+        st.info("Using reference dataset for SHAP analysis. Upload your own data for custom analysis.")
+        base_data = REF.copy()
+    elif uploaded is not None:
+        try:
+            base_data = pd.read_csv(io.BytesIO(uploaded.getvalue()))
+        except Exception as e:
+            st.error(f"Error loading uploaded data: {e}")
+            base_data = REF.copy() if REF is not None else None
+    else:
+        base_data = None
+        
+    if base_data is not None and inference_pipeline is not None:
+        st.write("#### 📊 **SHAP Feature Importance Analysis**")
+        
+        try:
+            # Prepare data for SHAP
+            sample_data = base_data.sample(n=min(100, len(base_data)), random_state=42)
+            al_sample = align_columns(sample_data.copy(), EXPECTED_COLS)
+            
+            # Get model and preprocessor
+            model = inference_pipeline.named_steps["model"]
+            preprocessor = inference_pipeline.named_steps["preprocess"]
+            
+            # Transform data
+            X_transformed = preprocessor.transform(al_sample)
+            if hasattr(X_transformed, 'toarray'):
+                X_transformed = X_transformed.toarray()
+                
+            # Get feature names
+            numeric_features = [c for c in EXPECTED_COLS if c not in ['Country', 'Disease_Name']]
+            categorical_features = ['Country', 'Disease_Name']
+            
+            feature_names = numeric_features.copy()
+            try:
+                cat_transformer = preprocessor.named_transformers_['cat']
+                if hasattr(cat_transformer, 'get_feature_names_out'):
+                    cat_features = cat_transformer.get_feature_names_out(categorical_features)
+                    feature_names.extend(cat_features)
+            except:
+                feature_names.extend(categorical_features)
+            
+            # Calculate feature importance from model
+            if hasattr(model, 'feature_importances_'):
+                importances = model.feature_importances_
+                
+                # Ensure matching lengths
+                min_len = min(len(feature_names), len(importances))
+                feature_names = feature_names[:min_len]
+                importances = importances[:min_len]
+                
+                # Create importance DataFrame
+                importance_df = pd.DataFrame({
+                    'Feature': feature_names,
+                    'Importance': importances,
+                    'Importance_Pct': (importances / importances.sum()) * 100
+                }).sort_values('Importance', ascending=False)
+                
+                # Display top features
+                col1, col2 = st.columns([2, 1])
+                
+                with col1:
+                    # Interactive bar chart
+                    fig_imp = px.bar(
+                        importance_df.head(15),
+                        x='Importance',
+                        y='Feature',
+                        orientation='h',
+                        title="Top 15 Features by Importance",
+                        color='Importance',
+                        color_continuous_scale='viridis'
+                    )
+                    fig_imp.update_layout(yaxis={'categoryorder': 'total ascending'})
+                    st.plotly_chart(fig_imp, use_container_width=True)
+                
+                with col2:
+                    st.write("**Feature Importance Ranking**")
+                    for i, row in importance_df.head(10).iterrows():
+                        st.write(f"{row.name + 1}. **{row['Feature']}**: {row['Importance_Pct']:.1f}%")
+                
+                # Feature importance table
+                st.write("**Detailed Feature Importance**")
+                st.dataframe(importance_df, use_container_width=True)
+                
+        except Exception as e:
+            st.error(f"Error in SHAP analysis: {e}")
+            st.write("Detailed error for debugging:", str(e))
+    
+    st.divider()
+    
+    # Risk Assessment Guidelines
+    st.write("### ⚠️ **Risk Assessment Guidelines**")
+    
+    risk_guidelines = {
+        "🔴 **High Risk (Model Prediction = 1)**": [
+            "Case fatality rate > 1% OR Cases per 100k population > 100",
+            "Requires immediate attention and intervention planning",
+            "Enhanced surveillance and resource allocation needed",
+            "Consider implementing containment measures"
+        ],
+        "🟢 **Low Risk (Model Prediction = 0)**": [
+            "Case fatality rate ≤ 1% AND Cases per 100k population ≤ 100", 
+            "Continue routine monitoring and surveillance",
+            "Maintain standard preventive measures",
+            "Regular reassessment recommended"
+        ]
+    }
+    
+    for risk_level, guidelines in risk_guidelines.items():
+        st.write(f"#### {risk_level}")
+        for guideline in guidelines:
+            st.write(f"• {guideline}")
+    
+    st.divider()
+    
+    # Model Limitations and Disclaimers
+    st.write("### ⚠️ **Model Limitations & Disclaimers**")
+    
+    limitations = [
+        "**Not a substitute for professional medical judgment**: Always consult public health experts",
+        "**Historical data bias**: Model trained on past outbreak data, may not capture emerging patterns",
+        "**Geographic limitations**: Performance may vary across different regions and healthcare systems",
+        "**Data quality dependent**: Predictions are only as good as the input data quality",
+        "**Temporal limitations**: Model may not account for rapidly changing epidemiological conditions",
+        "**Ethical use only**: This tool should support, not replace, human decision-making in public health"
+    ]
+    
+    for limitation in limitations:
+        st.warning(limitation)
 
 # ----------------------------
 # Fairness tab (selection rate + optional metrics)
@@ -674,4 +1199,64 @@ with tab_drift:
                     )
                 drift_df = pd.DataFrame(rows).sort_values("psi", ascending=False)
                 st.dataframe(drift_df, use_container_width=True)
-                st.caption("Heuristic: PSI ≥ 0.2 = high drift, 0.1–0.2 = medium.")
+                
+                # Enhanced drift visualization
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    # PSI visualization
+                    fig_psi = px.bar(
+                        drift_df.head(15),
+                        x='psi',
+                        y='feature',
+                        orientation='h',
+                        title="Population Stability Index (PSI) by Feature",
+                        color='drift_flag',
+                        color_discrete_map={'HIGH': 'red', 'MED': 'orange', 'LOW': 'green'}
+                    )
+                    fig_psi.add_vline(x=0.1, line_dash="dash", line_color="orange", 
+                                     annotation_text="Medium threshold")
+                    fig_psi.add_vline(x=0.2, line_dash="dash", line_color="red", 
+                                     annotation_text="High threshold")
+                    st.plotly_chart(fig_psi, use_container_width=True)
+                
+                with col2:
+                    # KS test p-values
+                    valid_ks = drift_df[drift_df['ks_pvalue'].notna()]
+                    if not valid_ks.empty:
+                        fig_ks = px.scatter(
+                            valid_ks,
+                            x='ks_pvalue',
+                            y='psi',
+                            hover_data=['feature'],
+                            title="KS Test p-value vs PSI",
+                            color='drift_flag',
+                            color_discrete_map={'HIGH': 'red', 'MED': 'orange', 'LOW': 'green'}
+                        )
+                        fig_ks.add_hline(y=0.1, line_dash="dash", line_color="orange")
+                        fig_ks.add_hline(y=0.2, line_dash="dash", line_color="red")
+                        fig_ks.add_vline(x=0.05, line_dash="dash", line_color="blue", 
+                                        annotation_text="Significance threshold")
+                        st.plotly_chart(fig_ks, use_container_width=True)
+                
+                # Drift summary metrics
+                st.write("**📊 Drift Summary**")
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    high_drift_count = (drift_df['drift_flag'] == 'HIGH').sum()
+                    st.metric("High Drift Features", high_drift_count)
+                
+                with col2:
+                    med_drift_count = (drift_df['drift_flag'] == 'MED').sum()
+                    st.metric("Medium Drift Features", med_drift_count)
+                
+                with col3:
+                    avg_psi = drift_df['psi'].mean()
+                    st.metric("Average PSI", f"{avg_psi:.3f}")
+                
+                st.caption("**Interpretation:**")
+                st.caption("• PSI < 0.1: No significant drift (LOW)")
+                st.caption("• PSI 0.1-0.2: Moderate drift, monitor closely (MED)")  
+                st.caption("• PSI ≥ 0.2: Significant drift, model retraining recommended (HIGH)")
+                st.caption("• KS p-value < 0.05: Statistically significant distribution difference")

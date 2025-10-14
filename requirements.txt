@@ -1,19 +1,38 @@
-# Core ML / Data
+# Core ML / Data Science Stack
 scikit-learn==1.5.2
 pandas==2.2.2
 numpy==1.26.4
 joblib==1.4.2
 
-# API
+# Web Framework & API
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
 
-# Testing
-pytest==8.3.2
-httpx==0.27.2
-
-# Dashboard
+# Dashboard & Visualization
 streamlit==1.38.0
 matplotlib==3.9.2
 plotly==5.17.0
 seaborn==0.13.2
+scipy==1.13.1
+
+# Machine Learning Explainability
+shap==0.44.1
+
+# System & Production Dependencies
+Pillow==10.4.0
+kiwisolver==1.4.5
+fonttools==4.53.1
+cycler==0.12.1
+pyparsing==3.1.4
+python-dateutil==2.9.0
+pytz==2024.1
+packaging==24.1
+six==1.16.0
+contourpy==1.2.1
+
+# Testing Framework
+pytest==8.3.2
+httpx==0.27.2
+
+# Optional performance improvements
+watchdog==4.0.2

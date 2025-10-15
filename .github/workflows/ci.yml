@@ -89,13 +89,16 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Convert repository owner to lowercase
+        id: lowercase
+        run: echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
       - name: Build & push (GHCR) on main
         uses: docker/build-push-action@v6
         with:
           context: .
           push: ${{ github.ref == 'refs/heads/main' }}
           tags: |
-            ghcr.io/${{ github.repository_owner }}/disease-outbreak-api:latest
-            ghcr.io/${{ github.repository_owner }}/disease-outbreak-api:${{ github.sha }}
+            ghcr.io/${{ steps.lowercase.outputs.owner }}/disease-outbreak-api:latest
+            ghcr.io/${{ steps.lowercase.outputs.owner }}/disease-outbreak-api:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

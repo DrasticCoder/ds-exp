@@ -75,6 +75,7 @@
 - **38 production file issues** - Line length, variable naming, exception handling
 - **CI checking wrong files** - Including research notebooks in production checks
 - **Test failures** - Hard failures when ML artifacts missing
+- **Docker build failure** - Repository name with uppercase letters (DrasticCoder → drasticcoder)
 
 ### Solutions Implemented
 
@@ -83,6 +84,7 @@
 - **Fixed production issues**: Line length, exception handling, unused variables
 - **Enhanced test resilience**: Graceful skips when artifacts unavailable
 - **Automated fix scripts**: One-command resolution of code quality issues
+- **Fixed Docker registry naming**: Added lowercase conversion for GitHub username in CI workflow
 
 ## 📊 Before/After Comparison
 
@@ -93,6 +95,7 @@
 | Black Issues      | Multiple formatting problems | **0** (all formatted) ✅     |
 | CI Scope          | Entire codebase + notebooks  | **Production files only** ✅ |
 | Test Reliability  | Failed on missing artifacts  | **Graceful skip/pass** ✅    |
+| Docker Build      | Failed (uppercase repo name) | **Fixed (lowercase)** ✅     |
 | Local Testing     | Manual process               | **Automated scripts** ✅     |
 
 ## 🎯 Project Impact

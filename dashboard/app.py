@@ -103,6 +103,146 @@ st.caption(
 )
 
 # ----------------------------
+# Problem Statement & Solution Overview
+# ----------------------------
+with st.expander("📋 About This System - Disease Outbreak Monitoring in India", expanded=True):
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.markdown("""
+        ### 🇮🇳 **The Challenge We Face in India**
+        
+        India faces significant challenges with disease outbreaks due to:
+        - **High Population Density**: Over 1.4 billion people living in close proximity
+        - **Diverse Climate Zones**: From tropical to temperate, creating varied disease patterns
+        - **Seasonal Outbreaks**: Monsoons often trigger waterborne diseases
+        - **Healthcare Access**: Uneven distribution of medical facilities across urban and rural areas
+        - **Cross-border Movement**: International travel and trade increasing disease transmission risks
+        
+        ### 🎯 **Our Solution: Smart Disease Outbreak Prediction**
+        
+        This dashboard uses **Artificial Intelligence** to help public health officials and policymakers:
+        - **Predict Disease Outbreaks** before they become widespread
+        - **Identify High-Risk Areas** that need immediate attention
+        - **Monitor Health Trends** across different regions and populations
+        - **Make Data-Driven Decisions** for resource allocation and prevention strategies
+        """)
+        
+    with col2:
+        st.markdown("""
+        ### 📊 **Key Statistics**
+        
+        🏥 **Healthcare Infrastructure**
+        - Hospital beds per 1000: 0.5
+        - Doctors per 1000: 0.7
+        - Rural health coverage: 65%
+        
+        🦠 **Common Outbreaks in India**
+        - Dengue, Chikungunya
+        - Malaria, Typhoid
+        - COVID-19 variants
+        - Seasonal influenza
+        - Waterborne diseases
+        
+        🎯 **Our Impact**
+        - Early warning system
+        - Resource optimization
+        - Better preparedness
+        - Lives saved through prediction
+        """)
+
+# ----------------------------
+# How It Works - Simple Explanation
+# ----------------------------
+with st.expander("🔬 How Our AI System Works (Simple Explanation)", expanded=False):
+    st.markdown("""
+    ### 🤖 **What is AI Disease Prediction?**
+    
+    Think of our system like a **weather forecast**, but for diseases instead of rain:
+    
+    **Step 1: Data Collection** 📊
+    - We gather information about past disease outbreaks
+    - Population health data, climate patterns, healthcare capacity
+    - Economic factors, vaccination rates, and demographic information
+    
+    **Step 2: Pattern Recognition** 🧠
+    - Our AI learns from historical data to find patterns
+    - For example: "When temperature rises and humidity increases, dengue cases often follow"
+    - Or: "Areas with low vaccination rates tend to have higher outbreak risks"
+    
+    **Step 3: Risk Prediction** 🎯
+    - Based on current conditions, we predict outbreak probability
+    - **High Risk**: Immediate action needed (increase surveillance, deploy medical teams)
+    - **Medium Risk**: Monitor closely and prepare resources
+    - **Low Risk**: Continue routine monitoring
+    
+    **Step 4: Actionable Insights** 💡
+    - Provide specific recommendations for health officials
+    - Identify which populations are most vulnerable
+    - Suggest preventive measures and resource allocation
+    
+    ### 🏆 **Why This Matters**
+    
+    **For Government Officials:**
+    - Make informed decisions about where to deploy medical resources
+    - Plan vaccination drives in high-risk areas
+    - Allocate budget more effectively
+    
+    **For Healthcare Workers:**
+    - Prepare hospitals and clinics for potential patient influx
+    - Stock necessary medicines and equipment
+    - Train staff for specific disease management
+    
+    **For Citizens:**
+    - Stay informed about health risks in their area
+    - Take preventive measures when risk is high
+    - Trust in data-driven public health policies
+    """)
+
+# ----------------------------
+# Dashboard Features Overview
+# ----------------------------
+with st.expander("🛠️ Dashboard Features & How to Use", expanded=False):
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown("""
+        ### 📊 **Data Exploration**
+        - Upload your health data (CSV format)
+        - Visualize disease patterns and trends
+        - Understand data quality and completeness
+        - Interactive charts and graphs
+        """)
+        
+    with col2:
+        st.markdown("""
+        ### 📈 **Risk Analysis**
+        - AI-powered outbreak risk predictions
+        - Feature importance analysis
+        - SHAP explanations (why AI made specific predictions)
+        - Confidence levels and uncertainty measures
+        """)
+        
+    with col3:
+        st.markdown("""
+        ### 🛡️ **Responsible AI**
+        - Fairness analysis across different populations
+        - Bias detection and mitigation
+        - Model drift monitoring
+        - Ethical AI practices and transparency
+        """)
+    
+    st.markdown("""
+    ### 🎯 **Getting Started**
+    1. **Upload Data**: Use the file uploader in the sidebar to upload your disease/health data
+    2. **Explore**: Navigate through different tabs to understand your data
+    3. **Analyze**: Get AI predictions and understand the reasoning behind them
+    4. **Act**: Use insights to make informed public health decisions
+    
+    **Need Help?** Each section has detailed explanations and the system is designed to be user-friendly for non-technical users.
+    """)
+
+# ----------------------------
 # Sidebar controls (auto-detect sensitive & target)
 # ----------------------------
 with st.sidebar:

@@ -9,4 +9,3 @@ with tab1:
     st.write("Tab 1 content")
 with tab2:
     st.write("Tab 2 content")
-

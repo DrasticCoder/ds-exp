@@ -1,10 +1,11 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from typing import List, Dict, Any, Optional
-import pandas as pd
-import joblib
 import json
 import os
+from typing import Any, Dict, List, Optional
+
+import joblib
+import pandas as pd
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 
 APP_DIR = os.path.dirname(__file__)
 ART_DIR = os.path.join(APP_DIR, "artifacts")
@@ -36,10 +37,10 @@ LABEL_MAP = {0: "Low Risk", 1: "High Risk"}
 @app.get("/health")
 def health():
     return {
-        "status": "ok", 
+        "status": "ok",
         "expected_features": len(EXPECTED_COLS),
         "description": "Disease Outbreak Risk Prediction API",
-        "model_features": EXPECTED_COLS
+        "model_features": EXPECTED_COLS,
     }
 
 
@@ -50,8 +51,8 @@ def root():
         "endpoints": {
             "/health": "Check API health",
             "/predict": "Predict disease outbreak risk",
-            "/docs": "API documentation"
-        }
+            "/docs": "API documentation",
+        },
     }
 
 
@@ -59,7 +60,7 @@ def root():
 def predict(req: PredictRequest):
     """
     Predict disease outbreak risk based on input features.
-    
+
     Expected features:
     - Population: Population size
     - Cases_Reported: Number of reported cases
@@ -76,7 +77,7 @@ def predict(req: PredictRequest):
     - healthcare_vaccination_score: Healthcare-vaccination interaction score
     - Country: Country name
     - Disease_Name: Disease name
-    
+
     Returns:
     - 0 (Low Risk): Case fatality rate ≤ 1% AND cases per 100k ≤ 100
     - 1 (High Risk): Case fatality rate > 1% OR cases per 100k > 100
@@ -98,7 +99,7 @@ def predict(req: PredictRequest):
             proba = inference_pipeline.predict_proba(df)[:, 1].tolist()
         preds = inference_pipeline.predict(df).tolist()
     except Exception as e:
-        raise HTTPException(500, f"Inference error: {e}")
+        raise HTTPException(500, f"Inference error: {e}") from None
 
     labels = [LABEL_MAP.get(int(p), str(p)) for p in preds]
     return PredictResponse(

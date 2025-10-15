@@ -4,7 +4,7 @@
 import re
 
 # Read the file
-with open('dashboard/app.py', 'r', encoding='utf-8') as f:
+with open("dashboard/app.py", encoding="utf-8") as f:
     content = f.read()
 
 # Fix the tabs line - replace the broken emoji and add Responsible AI tab
@@ -18,11 +18,11 @@ content = re.sub(r'"[^"]*Data Exploration"', '"📊 Data Exploration"', content)
 if "🛡️ Responsible AI" not in content:
     content = content.replace(
         '"📊 Data Exploration", "📈 Risk Analysis", "⚖️ Fairness"',
-        '"📊 Data Exploration", "📈 Risk Analysis", "🛡️ Responsible AI", "⚖️ Fairness"'
+        '"📊 Data Exploration", "📈 Risk Analysis", "🛡️ Responsible AI", "⚖️ Fairness"',
     )
 
 # Write the fixed content back
-with open('dashboard/app.py', 'w', encoding='utf-8') as f:
+with open("dashboard/app.py", "w", encoding="utf-8") as f:
     f.write(content)
 
 print("Fixed the dashboard file!")

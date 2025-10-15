@@ -1,0 +1,83 @@
+# Ruff configuration for Disease Outbreak Dashboard
+
+# Line length to match Black
+line-length = 88
+
+[lint]
+# Enable specific rule sets
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings  
+    "F",    # Pyflakes
+    "I",    # isort (import sorting)
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "YTT",  # flake8-2020
+    "S",    # flake8-bandit (security)
+    "B",    # flake8-bugbear
+    "A",    # flake8-builtins
+    "C4",   # flake8-comprehensions
+    "T20",  # flake8-print
+]
+
+# Ignore specific rules that are problematic for Streamlit/ML projects
+ignore = [
+    "E402",    # Module level import not at top (Streamlit needs st.set_page_config first)
+    "E501",    # Line too long (let Black handle formatting, especially for user-facing strings)
+    "S101",    # Use of assert (common in ML/data science)
+    "T201",    # Print statements (useful for debugging in notebooks/dashboards)
+    "B008",    # Do not perform function calls in argument defaults (Streamlit patterns)
+    "S311",    # Standard pseudo-random generators (not cryptographic use)
+    "A002",    # Argument shadowing builtin (common in data science)
+    "N806",    # Variable name should be lowercase (allow ML conventions like X, y)
+    "S110",    # try-except-pass detected (common pattern in error handling)
+    "E722",    # Do not use bare except (allow in dashboard contexts for robustness)
+    "B007",    # Loop control variable not used (common in streamlit apps)
+    "N803",    # Argument name should be lowercase (allow ML conventions)
+    "B904",    # Exception handling within except clause (allow for API endpoints)
+]
+
+# Exclude files and directories
+exclude = [
+    ".git",
+    ".venv",
+    "venv", 
+    "__pycache__",
+    "*.egg-info",
+    ".pytest_cache",
+    "notebooks/",  # Jupyter notebooks have different patterns
+]
+
+[lint.per-file-ignores]
+# Streamlit dashboard can have imports after page config
+"dashboard/app.py" = ["E402"]
+# Test files can use assert and have longer lines
+"tests/*" = ["S101", "E501"]
+# Scripts can have print statements
+"*.py" = ["T201"]
+
+[lint.mccabe]
+# Maximum cyclomatic complexity
+max-complexity = 15
+
+[lint.isort]
+# Configure import sorting to match your project structure
+known-first-party = ["app", "dashboard"]
+known-third-party = [
+    "streamlit", 
+    "pandas", 
+    "numpy", 
+    "sklearn", 
+    "matplotlib", 
+    "plotly", 
+    "seaborn", 
+    "fastapi", 
+    "shap",
+    "scipy"
+]
+
+[format]
+# Use Black-compatible formatting
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
